@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/gorilla/mux"
 )
@@ -28,6 +29,7 @@ func main() {
 	// Define a dynamic route with a URL parameter
 	router.HandleFunc("/api/{id}", authorize(userHandler)).Methods("GET")
 	router.HandleFunc("/", dbgo).Methods("GET", "POST")
+	router.HandleFunc("/register", registerdbgo).Methods("GET", "POST")
 	log.Fatal(http.ListenAndServe(":8080", router))
 }
 
@@ -122,5 +124,64 @@ func dbgo(w http.ResponseWriter, r *http.Request) {
 		fmt.Print("yes")
 		// Render success page if the credentials are valid
 
+	}
+}
+
+func registerdbgo(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "GET" {
+		tmpl, err := template.ParseFiles("templates/register.html")
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		// Execute the template
+		err = tmpl.Execute(w, nil)
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+	} else if r.Method == "POST" {
+		// Sanitize input to prevent SQL injection
+		username := strings.TrimSpace(r.FormValue("username"))
+		password := strings.TrimSpace(r.FormValue("password"))
+
+		// Read existing credentials from the JSON file
+		file, err := os.Open("./database/web-client/login.json")
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		defer file.Close()
+
+		var creds []Credentials
+		decoder := json.NewDecoder(file)
+		err = decoder.Decode(&creds)
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		// Append new user's credentials to the existing slice
+		newCreds := Credentials{Username: username, Password: password}
+		creds = append(creds, newCreds)
+
+		// Write updated credentials back to the JSON file
+		file, err = os.Create("./database/web-client/login.json")
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		defer file.Close()
+
+		encoder := json.NewEncoder(file)
+		err = encoder.Encode(&creds)
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		// Redirect to a success page
+		http.Redirect(w, r, "/success", http.StatusSeeOther)
 	}
 }
